@@ -129,46 +129,32 @@ export default function CoysCredentialGenerator({ onLogout }) {
         showToast(`Generated credentials for ${newCredsList.length} recipient(s).`, "success");
     };
 
-    // ── Email Sending Function - FIXED FOR YOUR TEMPLATE ─────────────────────
+    // ── Email Sending Function ────────────────────────────────────────────────
     const sendEmailToUser = async (recipientEmail, credentials, validityDays) => {
-        // EmailJS configuration
         const SERVICE_ID = "service_oeh4y3o";
         const TEMPLATE_ID = "template_zruv1rq";
         const PUBLIC_KEY = "hy71kTMrjMEHF72S-";
 
-        // Calculate expiry date
         const expiryDate = new Date();
         expiryDate.setDate(expiryDate.getDate() + validityDays);
         const userName = recipientEmail.split('@')[0];
 
-        // Template parameters matching EXACTLY what's in your EmailJS template
         const templateParams = {
-            email: recipientEmail,           // For "To Email" field - {{email}}
-            name: userName,                  // For subject "Welcome {{name}}!"
-            to_name: userName,               // For "Hello {{to_name}}"
-            username: credentials.username,  // For {{username}}
-            password: credentials.password,  // For {{password}}
-            validity_days: validityDays.toString(),  // For {{validity_days}}
-            current_date: new Date().toLocaleDateString(), // For {{current_date}}
-            expiry_date: expiryDate.toLocaleDateString(),  // For {{expiry_date}}
-            login_url: "https://your-vr-learning-platform.com" // For {{login_url}}
+            email: recipientEmail,
+            name: userName,
+            to_name: userName,
+            username: credentials.username,
+            password: credentials.password,
+            validity_days: validityDays.toString(),
+            current_date: new Date().toLocaleDateString(),
+            expiry_date: expiryDate.toLocaleDateString(),
+            login_url: "https://your-vr-learning-platform.com"
         };
 
-        console.log("📧 Sending to:", recipientEmail);
-        console.log("Template params:", templateParams);
-
         try {
-            const response = await emailjs.send(
-                SERVICE_ID,
-                TEMPLATE_ID,
-                templateParams,
-                PUBLIC_KEY
-            );
-            console.log("✅ Email sent successfully!");
+            const response = await emailjs.send(SERVICE_ID, TEMPLATE_ID, templateParams, PUBLIC_KEY);
             return { success: true, response };
         } catch (error) {
-            console.error("❌ Email error:", error);
-            console.error("Error text:", error.text);
             return { success: false, error: error.text || error.message };
         }
     };
@@ -188,14 +174,11 @@ export default function CoysCredentialGenerator({ onLogout }) {
         const emailResults = [];
 
         try {
-            // Process each credential
             for (const item of credsList) {
                 try {
-                    // Calculate expiry date
                     const expiryDate = new Date();
                     expiryDate.setDate(expiryDate.getDate() + parseInt(validity));
 
-                    // Prepare credential data for Firebase
                     const credentialData = {
                         email: item.email,
                         username: item.credentials.username,
@@ -209,18 +192,14 @@ export default function CoysCredentialGenerator({ onLogout }) {
                         createdAt_readable: new Date().toISOString()
                     };
 
-                    // Save to Firestore
                     const docRef = await addDoc(collection(db, "credentials"), credentialData);
-                    console.log(`💾 Saved to Firebase: ${item.email} (ID: ${docRef.id})`);
 
-                    // Send email to user
                     const emailResult = await sendEmailToUser(
                         item.email,
                         item.credentials,
                         parseInt(validity)
                     );
 
-                    // Log email result to Firebase
                     await addDoc(collection(db, "emailLogs"), {
                         credentialId: docRef.id,
                         email: item.email,
@@ -240,13 +219,11 @@ export default function CoysCredentialGenerator({ onLogout }) {
                     }
 
                 } catch (error) {
-                    console.error(`Error processing ${item.email}:`, error);
                     failedEmails.push(item.email);
                     emailResults.push({ email: item.email, status: "error", error: error.message });
                 }
             }
 
-            // Save summary to Firebase
             await addDoc(collection(db, "generationLogs"), {
                 timestamp: serverTimestamp(),
                 totalRecipients: credsList.length,
@@ -256,10 +233,9 @@ export default function CoysCredentialGenerator({ onLogout }) {
                 recipients: emailResults
             });
 
-            // Show summary toast
             if (savedCredentials.length > 0) {
                 showToast(
-                    `✓ Success! ${savedCredentials.length} credential(s) saved to Firebase. Emails sent to ${savedCredentials.length} recipient(s). ${failedEmails.length > 0 ? `Failed to send to ${failedEmails.length} recipient(s).` : ''}`,
+                    `✓ Success! ${savedCredentials.length} credential(s) saved to Firebase. Emails sent to ${savedCredentials.length} recipient(s).${failedEmails.length > 0 ? ` Failed: ${failedEmails.length}.` : ''}`,
                     failedEmails.length > 0 ? "warning" : "success"
                 );
             } else {
@@ -267,7 +243,6 @@ export default function CoysCredentialGenerator({ onLogout }) {
             }
 
         } catch (error) {
-            console.error("Error in save and send process:", error);
             showToast(`Error: ${error.message}. Please check console.`, "error");
         } finally {
             setIsSaving(false);
@@ -275,40 +250,7 @@ export default function CoysCredentialGenerator({ onLogout }) {
         }
     };
 
-    // ── Send Emails Only ───────────────────────────────────────────────────
-    const handleSendEmailsOnly = async () => {
-        if (credsList.length === 0) {
-            showToast("No credentials to send. Please generate credentials first.", "error");
-            return;
-        }
-
-        setIsSendingEmails(true);
-
-        const sentEmails = [];
-        const failedEmails = [];
-
-        for (const item of credsList) {
-            const result = await sendEmailToUser(item.email, item.credentials, parseInt(validity));
-            if (result.success) {
-                sentEmails.push(item.email);
-            } else {
-                failedEmails.push(item.email);
-            }
-        }
-
-        if (sentEmails.length > 0) {
-            showToast(
-                `📧 Emails sent to ${sentEmails.length} recipient(s). ${failedEmails.length > 0 ? `Failed to send to ${failedEmails.length} recipient(s).` : ''}`,
-                failedEmails.length > 0 ? "warning" : "success"
-            );
-        } else {
-            showToast("Failed to send any emails. Please check EmailJS configuration.", "error");
-        }
-
-        setIsSendingEmails(false);
-    };
-
-    // ── Excel Download Function ─────────────────────────────────────────────
+    // ── Excel Download ─────────────────────────────────────────────────────
     const handleDownloadExcel = () => {
         if (credsList.length === 0) {
             showToast("Generate credentials first before downloading.", "error");
@@ -327,22 +269,18 @@ export default function CoysCredentialGenerator({ onLogout }) {
             }));
 
             const ws = XLSX.utils.json_to_sheet(excelData);
-            const colWidths = [
+            ws['!cols'] = [
                 { wch: 5 }, { wch: 35 }, { wch: 25 },
                 { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 20 }
             ];
-            ws['!cols'] = colWidths;
 
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Credentials");
 
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            const filename = `credentials_${timestamp}.xlsx`;
-
-            XLSX.writeFile(wb, filename);
+            XLSX.writeFile(wb, `credentials_${timestamp}.xlsx`);
             showToast(`📥 Excel file downloaded with ${credsList.length} record(s).`, "success");
         } catch (error) {
-            console.error("Error generating Excel file:", error);
             showToast("Error generating Excel file.", "error");
         }
     };
@@ -371,18 +309,18 @@ export default function CoysCredentialGenerator({ onLogout }) {
                         <button
                             onClick={onLogout}
                             style={{
-                                marginLeft: '12px',
+                                marginLeft: '8px',
                                 padding: '6px 12px',
-                                background: '#ef4444',
+                                background: '#E8490A',
                                 border: 'none',
                                 borderRadius: '6px',
                                 color: 'white',
                                 cursor: 'pointer',
                                 fontSize: '11px',
-                                fontWeight: '500'
+                                fontWeight: '600',
+                                fontFamily: "'Montserrat', sans-serif",
+                                letterSpacing: '0.3px',
                             }}
-                            onMouseEnter={(e) => e.target.style.background = '#dc2626'}
-                            onMouseLeave={(e) => e.target.style.background = '#ef4444'}
                         >
                             Logout
                         </button>
@@ -443,7 +381,9 @@ export default function CoysCredentialGenerator({ onLogout }) {
                     {emails.map((email, index) => (
                         <div key={index} className="cc-generator-email-row">
                             <div className="cc-generator-field cc-generator-email-field">
-                                <label className="cc-generator-label">Email address {emails.length > 1 ? `#${index + 1}` : ""}</label>
+                                <label className="cc-generator-label">
+                                    Email address {emails.length > 1 ? `#${index + 1}` : ""}
+                                </label>
                                 <input
                                     className="cc-generator-input"
                                     type="email"
@@ -481,7 +421,7 @@ export default function CoysCredentialGenerator({ onLogout }) {
                             <span className="cc-generator-badge">{credsList.length} recipient(s)</span>
                         </p>
                         <p className="cc-generator-section__desc">
-                            This is your credential to access the VR learning platform. Note that it's only valid for {validity} days.
+                            Credentials for the VR learning platform — valid for {validity} days.
                         </p>
 
                         {credsList.map((item, index) => (
@@ -530,22 +470,12 @@ export default function CoysCredentialGenerator({ onLogout }) {
 
             <div className="cc-generator-footer">
                 {credsList.length > 0 && (
-                    <>
-                        <button
-                            className="cc-generator-btn cc-generator-btn--download"
-                            onClick={handleDownloadExcel}
-                        >
-                            📥 Download Excel
-                        </button>
-                        <button
-                            className="cc-generator-btn cc-generator-btn--save"
-                            onClick={handleSendEmailsOnly}
-                            disabled={isSendingEmails}
-                            style={{ background: "#7c3aed" }}
-                        >
-                            {isSendingEmails ? "Sending Emails..." : "✉️ Send Emails Only"}
-                        </button>
-                    </>
+                    <button
+                        className="cc-generator-btn cc-generator-btn--download"
+                        onClick={handleDownloadExcel}
+                    >
+                        📥 Download Excel
+                    </button>
                 )}
                 <button
                     className="cc-generator-btn cc-generator-btn--save"
